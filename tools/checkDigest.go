@@ -9,7 +9,7 @@ import (
 
 func main() {
 	//Read the certificate from *.pem
-	data, err := ioutil.ReadFile("./certificates/udemy-com.pem")
+	data, err := ioutil.ReadFile("../certificates/udemy-com.pem")
 	if err != nil {
 		fmt.Println("File reading error", err)
 		return
