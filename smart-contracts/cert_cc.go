@@ -34,56 +34,21 @@ type CertChaincode struct {
 
 // CertSummary structure manages the state
 type CertSummary struct {
-	digest    string  `json:"digest"`
-	algorithm string  `json:"algorithm"`
-	status    boolean `json:"status"`
+	Digest    string `json:"digest"`
+	Algorithm string `json:"algorithm"`
+	Status    bool   `json:"status"`
 }
 
-// OwnerPrefix is used for creating the key for balances
-const OwnerPrefix = "owner."
+type CertInfo struct {
+	Algorithm string `json:"algorithm"`
+	Status    bool   `json:"status"`
+	CertInPEM string `json:"CertInPEM"`
+}
 
 // Init Implements the Init method
 // Receives 4 parameters =  [0] Symbol [1] TotalSupply   [2] Description  [3] Owner
 func (certChain *CertChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response {
 
-	// Simply print a message
-	fmt.Println("Init executed")
-	_, args := stub.GetFunctionAndParameters()
-	// Check if we received the right number of arguments
-	if len(args) < 4 {
-		return shim.Error("Failed - incorrect number of parameters!!???")
-	}
-	symbol := string(args[0])
-	// Get total supply & check if it is > 0
-	totalSupply, err := strconv.ParseUint(string(args[1]), 10, 64)
-
-	if err != nil || totalSupply == 0 {
-		return shim.Error("Total Supply MUST be a number > 0 !! ")
-	}
-
-	// Creator name cannot be zeo length
-	if len(args[3]) == 0 {
-		return errorResponse("Creator identity cannot be 0 length!!!", 3)
-	}
-	creator := string(args[3])
-
-	// Create an instance of the token struct
-	var erc20 = ERC20Token{Symbol: symbol, TotalSupply: totalSupply, Description: string(args[2]), Creator: creator}
-
-	// Convert to JSON and store token in the state
-	jsonERC20, _ := json.Marshal(erc20)
-	stub.PutState("token", []byte(jsonERC20))
-
-	// Maintain the balances in the state db
-	// In the begining all tokens are owned by the creator of the token
-	key := OwnerPrefix + creator
-	fmt.Println("Key=", key)
-	err = stub.PutState(key, []byte(args[1]))
-	if err != nil {
-		return errorResponse(err.Error(), 4)
-	}
-
-	return shim.Success([]byte(jsonERC20))
 }
 
 // Invoke method
@@ -118,6 +83,7 @@ func (certChain *CertChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Re
  * function addCert(address certOwnerID, CertSummary certSummary) public view returns (bool success);
  * Returns bool success OR failure
  * {"Args":["addCert","domainName","digest","algorithm","status","certInPem"]}
+ * the digest is the hash value of {{}}
  **/
 func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	//Check if enough arguments are in the args
@@ -125,15 +91,21 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Needs domainName, digest, algorithm & status!!!", 700)
 	}
 
-	//Check whether the certificate corresponding to the domain has existed
+	//Check whether the certificate corresponding to the domain has existed and not been revoked)
+	domainName := string(args[0])
 	bytes, _ := stub.GetState(domainName)
-	if len(bytes) != 0 {
+	tempCertSummary := CertSummary{}
+	errGet := json.Unmarshal(bytes, &tempCertSummary)
+	if errGet != nil {
+		return errorResponse("Unkown expection on parsing the certSummary", 703)
+	}
+	if len(bytes) != 0 && !tempCertSummary.Status {
 		// That means 0 token balance
-		return errorResponse("The certificate corresponding to the domain has already existed", 703)
+		return errorResponse("The certificate corresponding to the domain has already existed and not been revoked", 703)
 	}
 
 	//Check whether the certificate in question has been expired
-	block, _ := pem.Decode([]byte(certPEM))
+	block, _ := pem.Decode([]byte(string(args[4])))
 	if block == nil {
 		return errorResponse("failed to parse certificate PEM!!!", 700)
 	}
@@ -142,7 +114,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("failed to parse certificate: "+err.Error(), 700)
 	}
 	now := time.Now()
-	if now.Sub(notAfter) > 0 {
+	if now.Sub(cert.NotAfter) > 0 {
 		return errorResponse("The certificate in question has expired!!!", 700)
 	}
 
@@ -151,14 +123,26 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if algorithm != "SHA256" {
 		return errorResponse("The algorithm of hashcode needs to be SHA256!!!", 700)
 	}
-	hashCode := GetSHA256HashCode([]byte(args[4]))
+	var certInfo = CertInfo{Algorithm: algorithm, Status: status, CertInPEM: string(args[4])}
+	jsonCertInfo, _ := json.Marshal(certInfo)
+	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
 	if digest != hashcode {
 		return errorResponse("The digest is inconsistent with the hash of the certificate!!!", 700)
 	}
 
 	//Add the certificate
-
+	status, err := strconv.ParseBool(args[3])
+	if err != nil {
+		return errorResponse("The status must be TRUE or FALSE!!!", 700)
+	}
+	var certSummary = CertSummary{Digest: digest, Algorithm: algorithm, Status: status}
+	// Convert to JSON and store certSummary in the state
+	jsonCertSummary, _ := json.Marshal(certSummary)
+	err = stub.PutState(domainName, []byte(jsonCertSummary))
+	if err != nil {
+		return errorResponse(err.Error(), 4)
+	}
 }
 
 /**
@@ -189,110 +173,6 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  **/
 func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 
-}
-
-/**
- * Getter function
- * function totalSupply() public view returns (bool success);
- * Returns the totalSupply for the token
- **/
-func totalSupply(stub shim.ChaincodeStubInterface) peer.Response {
-
-	bytes, err := stub.GetState("token")
-	if err != nil {
-		return errorResponse(err.Error(), 5)
-	}
-
-	// Read the JSON and Initialize the struct
-	var erc20 ERC20Token
-	_ = json.Unmarshal(bytes, &erc20)
-
-	// Create the JSON Response with totalSupply
-	return successResponse(strconv.FormatUint(erc20.TotalSupply, 10))
-}
-
-/**
- * Getter function
- * function balanceOf(address tokenOwner) public view returns (uint balance);
- * Returns the balance for the specified owner
- * {"Args":["balanceOf","owner-id"]}
- **/
-func balanceOf(stub shim.ChaincodeStubInterface, args []string) peer.Response {
-	// Check if owner id is in the arguments
-	if len(args) < 1 {
-		return errorResponse("Needs OwnerID!!!", 6)
-	}
-	OwnerID := args[0]
-	bytes, err := stub.GetState(OwnerPrefix + OwnerID)
-	if err != nil {
-		return errorResponse(err.Error(), 7)
-	}
-
-	response := balanceJSON(OwnerID, string(bytes))
-
-	return successResponse(response)
-}
-
-/**
- * Setter function
- * function transfer(address to, uint tokens) public returns (bool success);
- * Transfer tokens
- * {"Args":["from","to","amount"]}
- **/
-func transfer(stub shim.ChaincodeStubInterface, args []string) peer.Response {
-	// Check if owner id is in the arguments
-	if len(args) < 3 {
-		return errorResponse("Needs to, from & amount!!!", 700)
-	}
-
-	from := string(args[0])
-	to := string(args[1])
-	amount, err := strconv.Atoi(string(args[2]))
-	if err != nil {
-		return errorResponse(err.Error(), 701)
-	}
-	if amount <= 0 {
-		return errorResponse("Amount MUST be > 0!!!", 702)
-	}
-
-	// Get the Balance for from
-	bytes, _ := stub.GetState(OwnerPrefix + from)
-	if len(bytes) == 0 {
-		// That means 0 token balance
-		return errorResponse("Balance MUST be > 0!!!", 703)
-	}
-
-	fromBalance, _ := strconv.Atoi(string(bytes))
-	if fromBalance < amount {
-		return errorResponse("Insufficient balance to cover transfer!!!", 704)
-	}
-	// Reduce the tokens in from account
-	fromBalance = fromBalance - amount
-
-	// Get the balance in to account
-	bytes, _ = stub.GetState(OwnerPrefix + to)
-	toBalance := 0
-	if len(bytes) > 0 {
-		toBalance, _ = strconv.Atoi(string(bytes))
-	}
-	toBalance += amount
-
-	// Update the balance
-	bytes = []byte(strconv.FormatInt(int64(fromBalance), 10))
-	err = stub.PutState(OwnerPrefix+from, bytes)
-
-	bytes = []byte(strconv.FormatInt(int64(toBalance), 10))
-	err = stub.PutState(OwnerPrefix+to, bytes)
-
-	// Emit Transfer Event
-	eventPayload := "{\"from\":\"" + from + "\", \"to\":\"" + to + "\",\"amount\":" + strconv.FormatInt(int64(amount), 10) + "}"
-	stub.SetEvent("transfer", []byte(eventPayload))
-	return successResponse("\"Transfer Successful!!!\"")
-}
-
-// balanceJSON creates a JSON for representing the balance
-func balanceJSON(OwnerID, balance string) string {
-	return "{\"owner\":\"" + OwnerID + "\", \"balance\":" + balance + "}"
 }
 
 func getHistoryByKey(stub shim.ChaincodeStubInterface, args []string) peer.Response {
