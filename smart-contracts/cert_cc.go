@@ -154,7 +154,18 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  * {"Args":["deleteCert","certOwnerID"]}
  **/
 func deleteCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
+	// Check if owner id is in the arguments
+	if len(args) < 1 {
+		return errorResponse("Needs certificate OwnerID!!!", 6)
+	}
+	certOwnerID := args[0]
+	//TODO perminssion problem
 
+	err := stub.DelState(certOwnerID)
+	if err != nil {
+		return errorResponse(err.Error(), 7)
+	}
+	return successResponse("\"Delete Successful!!!\"")
 }
 
 /**
