@@ -47,18 +47,18 @@ type CertInfo struct {
 	CertInPEM  string `json:"CertInPEM"`
 }
 
-type CertChain struct {
+type CertBlockchain struct {
 	Symbol      string `json:"symbol"`
 	Description string `json:"description"`
 }
 
 // Init Implements the Init method
-// Receives 4 parameters =  [0] Symbol  [1] Description
+// Receives 2 parameters =  [0] Symbol  [1] Description
 func (certChain *CertChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response {
 	//TODO
 	// Simply print a message
 	fmt.Println("Init executed")
-
+	_, args := stub.GetFunctionAndParameters()
 	// Check if we received the right number of arguments
 	if len(args) < 2 {
 		return shim.Error("Failed - incorrect number of parameters!!???")
@@ -66,14 +66,14 @@ func (certChain *CertChaincode) Init(stub shim.ChaincodeStubInterface) peer.Resp
 	symbol := string(args[0])
 	description := string(args[1])
 	//Create an instance of the CertChain struct
-	var certChain = CertChain{Symbol: symbol, Description: description}
+	var certBlockchain = CertBlockchain{Symbol: symbol, Description: description}
 	//Convert to JSON and store the certChain in the state
-	jsonCertChain, _ := json.Marshal(certChain)
-	err := stub.PutState("certChain", []byte(jsonERC20))
+	jsonCertBlockchain, _ := json.Marshal(certBlockchain)
+	err := stub.PutState("certBlockchain", []byte(jsonCertBlockchain))
 	if err != nil {
 		return errorResponse(err.Error(), 4)
 	}
-	return shim.Success([]byte(jsonCertChain))
+	return shim.Success([]byte(jsonCertBlockchain))
 }
 
 // Invoke method
@@ -119,14 +119,16 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	//Check whether the certificate corresponding to the domain has existed and not been revoked)
 	domainName := string(args[0])
 	bytes, _ := stub.GetState(domainName)
-	tempCertSummary := CertSummary{}
-	errGet := json.Unmarshal(bytes, &tempCertSummary)
-	if errGet != nil {
-		return errorResponse("Unkown expection on parsing the certSummary", 703)
-	}
-	if len(bytes) != 0 && !tempCertSummary.Status {
-		// That means the certificate has existed and not been revoked
-		return errorResponse("The certificate corresponding to the domain has already existed and not been revoked", 703)
+	if len(bytes) != 0 {
+		tempCertSummary := CertSummary{}
+		errGet := json.Unmarshal(bytes, &tempCertSummary)
+		if errGet != nil {
+			return errorResponse("Unkown expection on parsing the certSummary", 703)
+		}
+		if !tempCertSummary.Status {
+			// That means the certificate has existed and not been revoked
+			return errorResponse("The certificate corresponding to the domain has already existed and not been revoked", 703)
+		}
 	}
 
 	//Check whether the certificate in question has been expired
@@ -156,7 +158,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
-	if digest != hashcode {
+	if digest != hashCode {
 		return errorResponse("The digest is inconsistent with the hash of the certificate!!!", 700)
 	}
 
@@ -225,7 +227,7 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
-	if digest != hashcode {
+	if digest != hashCode {
 		return errorResponse("The digest is inconsistent with the hash of the certificate!!!", 700)
 	}
 
@@ -247,6 +249,14 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  * {"Args":["getCert","certOwnerID"]}
  **/
 func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
+
+	//To test the GetCreator()
+	creator, err := stub.GetCreator()
+	if err != nil {
+		return errorResponse("Failed to get the creator!!!", 6)
+	}
+	fmt.Println("creator:", string(creator))
+
 	// Check if owner id is in the arguments
 	if len(args) < 1 {
 		return errorResponse("Needs certificate OwnerID!!!", 6)
@@ -262,13 +272,19 @@ func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	return successResponse(response)
 }
 
+/**
+ * Getter function
+ * function getHistoryByKey(address certOwnerID) public view returns (CertSummary certSummary);
+ * Returns the summary of the certificate
+ * {"Args":["getHistoryByKey","certOwnerID"]}
+ **/
 func getHistoryByKey(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	// Check if owner id is in the arguments
 	if len(args) < 1 {
 		return errorResponse("Needs OwnerID!!!", 6)
 	}
 	//To create the key
-	key := OwnerPrefix + args[0]
+	key := args[0]
 	// Get the history for the key i.e., VIN#
 	historyQueryIterator, err := stub.GetHistoryForKey(key)
 	// In case of error - return error
