@@ -47,10 +47,33 @@ type CertInfo struct {
 	CertInPEM  string `json:"CertInPEM"`
 }
 
-// Init Implements the Init method
-// Receives 4 parameters =  [0] Symbol [1] TotalSupply   [2] Description  [3] Owner
-func (certChain *CertChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response {
+type CertChain struct {
+	Symbol      string `json:"symbol"`
+	Description string `json:"description"`
+}
 
+// Init Implements the Init method
+// Receives 4 parameters =  [0] Symbol  [1] Description
+func (certChain *CertChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response {
+	//TODO
+	// Simply print a message
+	fmt.Println("Init executed")
+
+	// Check if we received the right number of arguments
+	if len(args) < 2 {
+		return shim.Error("Failed - incorrect number of parameters!!???")
+	}
+	symbol := string(args[0])
+	description := string(args[1])
+	//Create an instance of the CertChain struct
+	var certChain = CertChain{Symbol: symbol, Description: description}
+	//Convert to JSON and store the certChain in the state
+	jsonCertChain, _ := json.Marshal(certChain)
+	err := stub.PutState("certChain", []byte(jsonERC20))
+	if err != nil {
+		return errorResponse(err.Error(), 4)
+	}
+	return shim.Success([]byte(jsonCertChain))
 }
 
 // Invoke method
