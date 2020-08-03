@@ -90,7 +90,7 @@ func (certChain *CertChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Re
 func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	//Check if enough arguments are in the args
 	if len(args) < 5 {
-		return errorResponse("Needs domainName, digest, algorithm & status!!!", 700)
+		return errorResponse("Needs domainName, digest, algorithm , status  and certInPem!!!", 700)
 	}
 
 	//Check whether the certificate corresponding to the domain has existed and not been revoked)
@@ -102,7 +102,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Unkown expection on parsing the certSummary", 703)
 	}
 	if len(bytes) != 0 && !tempCertSummary.Status {
-		// That means 0 token balance
+		// That means the certificate has existed and not been revoked
 		return errorResponse("The certificate corresponding to the domain has already existed and not been revoked", 703)
 	}
 
@@ -125,6 +125,10 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if algorithm != "SHA256" {
 		return errorResponse("The algorithm of hashcode needs to be SHA256!!!", 700)
 	}
+	status, err := strconv.ParseBool(args[3])
+	if err != nil {
+		return errorResponse("The status must be TRUE or FALSE!!!", 700)
+	}
 	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, CertInPEM: string(args[4])}
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
@@ -134,10 +138,6 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	}
 
 	//Add the certificate
-	status, err := strconv.ParseBool(args[3])
-	if err != nil {
-		return errorResponse("The status must be TRUE or FALSE!!!", 700)
-	}
 	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Digest: digest}
 	// Convert to JSON and store certSummary in the state
 	jsonCertSummary, _ := json.Marshal(certSummary)
@@ -145,6 +145,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if err != nil {
 		return errorResponse(err.Error(), 4)
 	}
+	return successResponse("\"Add Successfully!!!\"")
 }
 
 /**
@@ -172,10 +173,48 @@ func deleteCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  * Setter function
  * function modifyCert(address certOwnerID, CertSummary certSummary) public view returns (bool success);
  * Returns bool success OR failure
- * {"Args":["modifyCert","certOwnerID","digest","algorithm","status"]}
+ * {"Args":["modifyCert","domainName","digest","algorithm","status","certInPem"]}
  **/
 func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
+	//Check if enough arguments are in the args
+	if len(args) < 5 {
+		return errorResponse("Needs domainName, digest, algorithm , status and certInPem!!!", 700)
+	}
 
+	//check whether the certificate corresponding to the domain exists
+	domainName := string(args[0])
+	bytes, _ := stub.GetState(domainName)
+	if len(bytes) == 0 {
+		// That means the certificate doesn't exist
+		return errorResponse("The certificate corresponding to the domain doesn't exist", 703)
+	}
+
+	//Check the digest
+	algorithm := string(args[2])
+	if algorithm != "SHA256" {
+		return errorResponse("The algorithm of hashcode needs to be SHA256!!!", 700)
+	}
+	status, err := strconv.ParseBool(args[3])
+	if err != nil {
+		return errorResponse("The status must be TRUE or FALSE!!!", 700)
+	}
+	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, CertInPEM: string(args[4])}
+	jsonCertInfo, _ := json.Marshal(certInfo)
+	hashCode := GetSHA256HashCode(jsonCertInfo)
+	digest := string(args[1])
+	if digest != hashcode {
+		return errorResponse("The digest is inconsistent with the hash of the certificate!!!", 700)
+	}
+
+	//Modify the certificate
+	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Digest: digest}
+	// Convert to JSON and store certSummary in the state
+	jsonCertSummary, _ := json.Marshal(certSummary)
+	err = stub.PutState(domainName, []byte(jsonCertSummary))
+	if err != nil {
+		return errorResponse(err.Error(), 4)
+	}
+	return successResponse("\"Modify Successfully!!!\"")
 }
 
 /**
