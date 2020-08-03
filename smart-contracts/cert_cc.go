@@ -34,15 +34,17 @@ type CertChaincode struct {
 
 // CertSummary structure manages the state
 type CertSummary struct {
-	Digest    string `json:"digest"`
-	Algorithm string `json:"algorithm"`
-	Status    bool   `json:"status"`
+	Status     bool   `json:"status"`
+	Algorithm  string `json:"algorithm"`
+	DomainName string `json:"domainName"`
+	Digest     string `json:"digest"`
 }
 
 type CertInfo struct {
-	Algorithm string `json:"algorithm"`
-	Status    bool   `json:"status"`
-	CertInPEM string `json:"CertInPEM"`
+	Status     bool   `json:"status"`
+	Algorithm  string `json:"algorithm"`
+	DomainName string `json:"domainName"`
+	CertInPEM  string `json:"CertInPEM"`
 }
 
 // Init Implements the Init method
@@ -123,7 +125,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if algorithm != "SHA256" {
 		return errorResponse("The algorithm of hashcode needs to be SHA256!!!", 700)
 	}
-	var certInfo = CertInfo{Algorithm: algorithm, Status: status, CertInPEM: string(args[4])}
+	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, CertInPEM: string(args[4])}
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
@@ -136,7 +138,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if err != nil {
 		return errorResponse("The status must be TRUE or FALSE!!!", 700)
 	}
-	var certSummary = CertSummary{Digest: digest, Algorithm: algorithm, Status: status}
+	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Digest: digest}
 	// Convert to JSON and store certSummary in the state
 	jsonCertSummary, _ := json.Marshal(certSummary)
 	err = stub.PutState(domainName, []byte(jsonCertSummary))
@@ -172,7 +174,19 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  * {"Args":["getCert","certOwnerID"]}
  **/
 func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
+	// Check if owner id is in the arguments
+	if len(args) < 1 {
+		return errorResponse("Needs certificate OwnerID!!!", 6)
+	}
+	certOwnerID := args[0]
+	bytes, err := stub.GetState(certOwnerID)
+	if err != nil {
+		return errorResponse(err.Error(), 7)
+	}
 
+	response := string(bytes)
+
+	return successResponse(response)
 }
 
 func getHistoryByKey(stub shim.ChaincodeStubInterface, args []string) peer.Response {
