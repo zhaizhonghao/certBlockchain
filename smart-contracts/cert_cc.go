@@ -196,7 +196,27 @@ func deleteCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Needs certificate OwnerID!!!", 6)
 	}
 	certOwnerID := args[0]
-	//TODO perminssion problem
+
+	//Only the issuer of the certificate can delete the certificate
+	creator, err := stub.GetCreator()
+	if err != nil {
+		return errorResponse("Failed to get the creator!!!", 6)
+	}
+	hashOfCert := GetSHA256HashCode(creator)
+	domainName := string(args[0])
+	bytes, _ := stub.GetState(domainName)
+	if len(bytes) == 0 {
+		// That means the certificate doesn't exist
+		return errorResponse("The certificate corresponding to the domain doesn't exist", 703)
+	}
+	tempCertSummary := CertSummary{}
+	errGet := json.Unmarshal(bytes, &tempCertSummary)
+	if errGet != nil {
+		return errorResponse("Unkown expection on parsing the certSummary", 703)
+	}
+	if tempCertSummary.Issuer != hashOfCert {
+		return errorResponse("Fail to delete, permission deny!!!", 703)
+	}
 
 	err := stub.DelState(certOwnerID)
 	if err != nil {
