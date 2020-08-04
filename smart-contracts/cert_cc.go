@@ -237,12 +237,26 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Needs domainName, digest, algorithm , status and certInPem!!!", 700)
 	}
 
+	//Only the issuer of the certificate can modify the certificate
+	creator, err := stub.GetCreator()
+	if err != nil {
+		return errorResponse("Failed to get the creator!!!", 6)
+	}
+	hashOfCert := GetSHA256HashCode(creator)
 	//check whether the certificate corresponding to the domain exists
 	domainName := string(args[0])
 	bytes, _ := stub.GetState(domainName)
 	if len(bytes) == 0 {
 		// That means the certificate doesn't exist
 		return errorResponse("The certificate corresponding to the domain doesn't exist", 703)
+	}
+	tempCertSummary := CertSummary{}
+	errGet := json.Unmarshal(bytes, &tempCertSummary)
+	if errGet != nil {
+		return errorResponse("Unkown expection on parsing the certSummary", 703)
+	}
+	if tempCertSummary.Issuer != hashOfCert {
+		return errorResponse("Fail to modify, permission deny!!!", 703)
 	}
 
 	//Check the digest
@@ -254,7 +268,7 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if err != nil {
 		return errorResponse("The status must be TRUE or FALSE!!!", 700)
 	}
-	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, CertInPEM: string(args[4])}
+	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, Issuer: hashOfCert, CertInPEM: string(args[4])}
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
