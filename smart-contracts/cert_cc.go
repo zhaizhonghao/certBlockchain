@@ -33,17 +33,21 @@ type CertChaincode struct {
 }
 
 // CertSummary structure manages the state
+//The issuer is the hash of the invoker's identity
 type CertSummary struct {
 	Status     bool   `json:"status"`
 	Algorithm  string `json:"algorithm"`
 	DomainName string `json:"domainName"`
+	Issuer     string `json:"Issuer"`
 	Digest     string `json:"digest"`
 }
 
+//The issuer is the hash of the invoker's identity
 type CertInfo struct {
 	Status     bool   `json:"status"`
 	Algorithm  string `json:"algorithm"`
 	DomainName string `json:"domainName"`
+	Issuer     string `json:"Issuer"`
 	CertInPEM  string `json:"CertInPEM"`
 }
 
@@ -154,7 +158,14 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	if err != nil {
 		return errorResponse("The status must be TRUE or FALSE!!!", 700)
 	}
-	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, CertInPEM: string(args[4])}
+	//To get the GetCreator()
+	creator, err := stub.GetCreator()
+	if err != nil {
+		return errorResponse("Failed to get the creator!!!", 6)
+	}
+	issuer := GetSHA256HashCode(creator)
+	fmt.Println("issuer:", issuer)
+	var certInfo = CertInfo{Status: status, Algorithm: algorithm, DomainName: domainName, Issuer: issuer, CertInPEM: string(args[4])}
 	jsonCertInfo, _ := json.Marshal(certInfo)
 	hashCode := GetSHA256HashCode(jsonCertInfo)
 	digest := string(args[1])
@@ -163,7 +174,7 @@ func addCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	}
 
 	//Add the certificate
-	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Digest: digest}
+	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Issuer: issuer, Digest: digest}
 	// Convert to JSON and store certSummary in the state
 	jsonCertSummary, _ := json.Marshal(certSummary)
 	err = stub.PutState(domainName, []byte(jsonCertSummary))
@@ -250,13 +261,6 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
  **/
 func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 
-	//To test the GetCreator()
-	creator, err := stub.GetCreator()
-	if err != nil {
-		return errorResponse("Failed to get the creator!!!", 6)
-	}
-	fmt.Println("creator:", string(creator))
-
 	// Check if owner id is in the arguments
 	if len(args) < 1 {
 		return errorResponse("Needs certificate OwnerID!!!", 6)
@@ -265,6 +269,10 @@ func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	bytes, err := stub.GetState(certOwnerID)
 	if err != nil {
 		return errorResponse(err.Error(), 7)
+	}
+	if len(bytes) == 0 {
+		// That means the certificate doesn't exist
+		return errorResponse("The certificate corresponding to the domain doesn't exist", 703)
 	}
 
 	response := string(bytes)
