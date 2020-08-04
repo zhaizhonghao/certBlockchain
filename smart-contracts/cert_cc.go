@@ -218,7 +218,7 @@ func deleteCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Fail to delete, permission deny!!!", 703)
 	}
 
-	err := stub.DelState(certOwnerID)
+	err = stub.DelState(certOwnerID)
 	if err != nil {
 		return errorResponse(err.Error(), 7)
 	}
@@ -277,7 +277,7 @@ func modifyCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 	}
 
 	//Modify the certificate
-	var certSummary = CertSummary{Status: status, Algorithm: algorithm, DomainName: domainName, Digest: digest}
+	var certSummary = CertSummary{Status: status, Algorithm: algorithm, Issuer: hashOfCert, DomainName: domainName, Digest: digest}
 	// Convert to JSON and store certSummary in the state
 	jsonCertSummary, _ := json.Marshal(certSummary)
 	err = stub.PutState(domainName, []byte(jsonCertSummary))
@@ -300,6 +300,8 @@ func getCert(stub shim.ChaincodeStubInterface, args []string) peer.Response {
 		return errorResponse("Needs certificate OwnerID!!!", 6)
 	}
 	certOwnerID := args[0]
+
+	//Check if the certificate exists
 	bytes, err := stub.GetState(certOwnerID)
 	if err != nil {
 		return errorResponse(err.Error(), 7)
