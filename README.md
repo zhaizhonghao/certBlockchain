@@ -102,3 +102,5 @@ peer chaincode invoke -C mychannel -n certChain -c '{"Args":["deleteCert","www.s
 ```
 peer chaincode invoke -C mychannel -n certChain -c '{"Args":["getHistoryByKey","www.shenshimen.com"]}'
 ```
+
+

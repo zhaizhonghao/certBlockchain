@@ -12,5 +12,4 @@ func main() {
 		s := strconv.FormatBool(true) // bool 转string
 		fmt.Println(s)
 	}
-
 }
